@@ -1,0 +1,83 @@
+#!/usr/bin/env ruby
+#encoding: utf-8
+
+require 'optparse'
+require 'yaml'
+require 'em-zeromq'
+
+require 'uri'
+require 'multi_json'
+
+=begin 
+=================================================================
+	获取命令行参数
+=================================================================
+=end
+
+options = {}
+
+banner_str = <<end_of_banner
+------------------ 程序说明 -------------------
+
+------------------ 命令行说明 ---------------------
+end_of_banner
+
+option_parser = OptionParser.new do |opts|
+	opts.banner = banner_str	
+=begin
+	title = '默认为48小时。=0，只抓新数据库中没的；>0，抓最新几个小时的'
+	opts.on('-t TIME', '--time Time', Integer, title) do |value|
+		options[:time] = value
+	end
+=end
+end.parse!
+
+
+=begin 
+=================================================================
+	读取配置文件
+=================================================================
+=end
+
+config = YAML.load_file 'config.yml'
+server_conf = config['server']
+host = server_conf['host']
+port = server_conf['port']
+
+=begin 
+=================================================================
+	监听zeromq
+=================================================================
+=end
+
+Thread.abort_on_exception = true
+
+trap('INT') do
+  EM::stop()
+end
+
+puts "Started (with zmq #{ZMQ::Util.version.join('.')})."
+
+zmq = EM::ZeroMQ::Context.new(1)
+
+EM.run do
+	# setup pull sockets
+	pull_srv = zmq.socket(ZMQ::PULL)
+
+	pull_srv.hwm = 10000
+	pull_srv.swap = 1024 * 4 * 256
+
+	# push_socket1.hwm = 40
+	puts "HWM: #{pull_srv.hwm}"
+	puts "SWAP: #{pull_srv.swap}"
+
+	pull_srv.bind("tcp://#{host}:#{port}")
+
+	pull_srv.on(:message) { |msg|
+		puts msg.copy_out_string
+		msg.close
+	}
+end
+
+puts "Completed."
+
