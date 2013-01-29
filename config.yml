@@ -1,3 +1,11 @@
 server:
   host: 0.0.0.0
   port: 2099
+
+database:
+  adapter: mysql2
+  host: localhost
+  database: log-server
+  encoding: utf8
+  username: log-admin
+  password: log-admin-pass

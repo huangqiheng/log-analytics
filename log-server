@@ -5,6 +5,9 @@ require 'optparse'
 require 'yaml'
 require 'em-zeromq'
 
+require 'active_record'
+require 'logger'
+
 require 'uri'
 require 'multi_json'
 
@@ -43,6 +46,87 @@ config = YAML.load_file 'config.yml'
 server_conf = config['server']
 host = server_conf['host']
 port = server_conf['port']
+
+=begin
+================================================================
+	建立数据库连接
+=================================================================
+=end
+
+ActiveRecord::Base.establish_connection config['database']
+ActiveRecord::Base.logger = Logger.new STDERR
+
+class Fact_request < ActiveRecord::Base
+	has_one :dim_time
+	has_one :dim_referer
+	has_one :dim_location
+	has_one :dim_language
+	has_one :dim_browser
+	has_one :dim_machine
+	has_one :dim_user
+	has_one :dim_host
+	has_one :dim_requesturi
+end
+
+class Dim_time       < ActiveRecord::Base belongs_to :fact_request end
+class Dim_referer    < ActiveRecord::Base belongs_to :fact_request end
+class Dim_location   < ActiveRecord::Base belongs_to :fact_request end
+class Dim_language   < ActiveRecord::Base belongs_to :fact_request end
+class Dim_browser    < ActiveRecord::Base belongs_to :fact_request end
+class Dim_machine    < ActiveRecord::Base belongs_to :fact_request end
+class Dim_user	     < ActiveRecord::Base belongs_to :fact_request end
+class Dim_host	     < ActiveRecord::Base belongs_to :fact_request end
+class Dim_requesturi < ActiveRecord::Base belongs_to :fact_request end
+
+
+new_talbe_created = false
+
+unless Fact_request.table_exists?
+	ActiveRecord::Schema.define do
+		create_table :fact_requests do |t|
+			t.datetime :time,    		:null=>false
+			t.integer  :machine_id,    	:null=>false
+			t.integer  :language_id,    	:null=>false
+			t.integer  :browser_id,    	:null=>false
+			t.integer  :host_id,    	:null=>false
+			t.integer  :location_id,    	:null=>false
+			t.integer  :referer_id,    	:null=>false
+			t.integer  :user_id,    	:null=>false
+			t.integer  :requesturi_id,    	:null=>false
+		end
+		add_index :fact_requests, [:time], :unique
+
+		create_table :dim_times do |t|
+		end
+
+		create_table :dim_referers do |t|
+		end
+
+		create_table :dim_locations do |t|
+		end
+
+		create_table :dim_languages do |t|
+		end
+
+		create_table :dim_browsers do |t|
+		end
+
+		create_table :dim_machines do |t|
+		end
+
+		create_table :dim_users do |t|
+		end
+
+		create_table :dim_hosts do |t|
+		end
+
+		create_table :dim_requesturis do |t|
+		end
+
+		new_talbe_created = true
+	end
+end
+
 
 =begin 
 =================================================================
