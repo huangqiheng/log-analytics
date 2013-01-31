@@ -10,6 +10,9 @@ require 'logger'
 
 require 'uri'
 require 'multi_json'
+require 'accept_language'
+require 'useragent'
+require 'geoip'
 
 =begin 
 =================================================================
@@ -56,77 +59,221 @@ port = server_conf['port']
 ActiveRecord::Base.establish_connection config['database']
 ActiveRecord::Base.logger = Logger.new STDERR
 
-class Fact_request < ActiveRecord::Base
-	has_one :dim_time
-	has_one :dim_referer
-	has_one :dim_location
-	has_one :dim_language
-	has_one :dim_browser
-	has_one :dim_machine
-	has_one :dim_user
-	has_one :dim_host
-	has_one :dim_requesturi
+class DimReferer    < ActiveRecord::Base; has_many :fact_requests end
+class DimLocation   < ActiveRecord::Base; has_many :fact_requests end
+class DimLanguage   < ActiveRecord::Base; has_many :fact_requests end
+class DimBrowser    < ActiveRecord::Base; has_many :fact_requests end
+class DimMachine    < ActiveRecord::Base; has_many :fact_requests end
+class DimUser	    < ActiveRecord::Base; has_many :fact_requests end
+class DimHost	    < ActiveRecord::Base; has_many :fact_requests end
+class DimRequesturi < ActiveRecord::Base; has_many :fact_requests end
+
+class FactRequest   < ActiveRecord::Base 
+	belongs_to :dim_referer
+	belongs_to :dim_location
+	belongs_to :dim_language
+	belongs_to :dim_browser
+	belongs_to :dim_machine
+	belongs_to :dim_user
+	belongs_to :dim_host
+	belongs_to :dim_requesturi
+=begin
+	validates_presence_of :dim_referer
+	validates_associated :dim_referer
+=end
 end
 
-class Dim_time       < ActiveRecord::Base belongs_to :fact_request end
-class Dim_referer    < ActiveRecord::Base belongs_to :fact_request end
-class Dim_location   < ActiveRecord::Base belongs_to :fact_request end
-class Dim_language   < ActiveRecord::Base belongs_to :fact_request end
-class Dim_browser    < ActiveRecord::Base belongs_to :fact_request end
-class Dim_machine    < ActiveRecord::Base belongs_to :fact_request end
-class Dim_user	     < ActiveRecord::Base belongs_to :fact_request end
-class Dim_host	     < ActiveRecord::Base belongs_to :fact_request end
-class Dim_requesturi < ActiveRecord::Base belongs_to :fact_request end
 
-
-new_talbe_created = false
-
-unless Fact_request.table_exists?
+def create_tables
 	ActiveRecord::Schema.define do
 		create_table :fact_requests do |t|
-			t.datetime :time,    		:null=>false
-			t.integer  :machine_id,    	:null=>false
-			t.integer  :language_id,    	:null=>false
-			t.integer  :browser_id,    	:null=>false
-			t.integer  :host_id,    	:null=>false
-			t.integer  :location_id,    	:null=>false
-			t.integer  :referer_id,    	:null=>false
-			t.integer  :user_id,    	:null=>false
-			t.integer  :requesturi_id,    	:null=>false
+			t.datetime 	:time,	    	:null=>false
+			t.integer	:dim_referer_id
+			t.integer 	:dim_location_id
+			t.integer 	:dim_language_id
+			t.integer 	:dim_browser_id
+			t.integer 	:dim_machine_id
+			t.integer 	:dim_user_id
+			t.integer 	:dim_host_id
+			t.integer 	:dim_requesturi_id
 		end
 		add_index :fact_requests, [:time], :unique
 
-		create_table :dim_times do |t|
-		end
-
 		create_table :dim_referers do |t|
+			t.string	:host,		:null=>false
+			t.integer	:uri_counter,	:default=>0
 		end
 
 		create_table :dim_locations do |t|
+			t.string	:ip,		:null=>false
+			t.string	:continent,	:null=>false
+			t.string	:country,	:null=>false
+			t.string	:city,		:null=>false
+			t.integer	:uri_counter,	:default=>0
 		end
 
 		create_table :dim_languages do |t|
+			t.string	:primary,	:null=>false
+			t.string	:sub,		:null=>false
+			t.string	:quality_value,	:null=>false
+			t.integer	:uri_counter,	:default=>0
 		end
 
 		create_table :dim_browsers do |t|
+			t.integer	:mobile,	:default=>0
+			t.string	:platform,	:null=>false
+			t.string	:browser,	:null=>false
+			t.string	:version,	:null=>false
+			t.integer	:uri_counter,	:default=>0
 		end
 
 		create_table :dim_machines do |t|
+			t.string	:token_key,	:null=>false
+			t.string	:hardware_key,	:null=>false
+			t.integer	:uri_counter,	:default=>0
 		end
 
 		create_table :dim_users do |t|
+			t.string	:user,		:null=>false
+			t.integer	:uri_counter,	:default=>0
 		end
 
 		create_table :dim_hosts do |t|
+			t.string	:host,		:null=>false
+			t.integer	:uri_counter,	:default=>0
 		end
 
 		create_table :dim_requesturis do |t|
+			t.string	:request_uri,	:null=>false
+			t.integer	:uri_counter,	:default=>0
 		end
-
-		new_talbe_created = true
 	end
 end
 
+def drop_tables
+	ActiveRecord::Schema.define do
+		drop_table :fact_requests 	if FactRequest.table_exists?
+		drop_table :dim_referers  	if DimReferer.table_exists?
+		drop_table :dim_locations 	if DimLocation.table_exists?
+		drop_table :dim_languages 	if DimLanguage.table_exists?
+		drop_table :dim_browsers  	if DimBrowser.table_exists?
+		drop_table :dim_machines  	if DimMachine.table_exists?
+		drop_table :dim_users 	  	if DimUser.table_exists?
+		drop_table :dim_hosts 	  	if DimHost.table_exists?
+		drop_table :dim_requesturis 	if DimRequesturi.table_exists?
+	end
+end
+
+drop_tables()
+
+create_tables()
+
+
+sample_json = '{"User-Id" : "hiand","Host" : "hi.baidu.com","Request URL" : "http://hi.baidu.com/chenshake/item/59c044fe49c3c6ef1b111ff8","Referer" : "https://www.google.com.hk/","User-Agent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_8_2) AppleWebKit/537.17 (KHTML, like Gecko) Chrome/24.0.1312.52 Safari/537.17","Accept-Language" : "zh-CN,zh;q=0.8","Client-Ip" : "22.224.12.67"}'
+
+def get_referer_id host
+
+end
+
+def get_location_id continent, country, city, timezone
+
+end
+
+def get_language_id primary, sub, quality_value
+
+end
+
+def get_browser_id mobile, platform, browser, version
+
+end
+
+def get_machine_id token, hardware
+
+end
+
+def get_user_id user
+
+end
+
+def get_host_id host
+
+end
+
+def get_requesturi_id uri
+
+end
+
+def import_database log_item
+	puts log_item
+end
+
+def push_log item_json
+	item = MultiJson.load item_json
+	return false unless host = item['Host']
+	return false unless url  = item['Request URL']
+	return false unless referer = item['Referer']
+	return false unless ua = item['User-Agent']
+	return false unless language = item['Accept-Language']
+	return false unless ip = item['Client-Ip']
+
+	time = item['Time'] || Time.now.utc.to_s
+	time = Time.parse(time).utc
+	userid = item['User-Id'] || 'null'
+	tokenid = item['Token-Id'] || 'null'
+	machineid = item['Machine-Id'] || 'null'
+
+	city = GeoIP.new('GeoLiteCity.dat').city(ip)
+	if city 
+		continent = city.continent_code || 'null'
+		country = city.country_name || 'null'
+		cityname = city.city_name || 'null'
+		timezone = city.timezone || 'null'
+	else
+		continent = country = cityname = timezone = 'null'
+	end
+
+	new_lang = language.split /[,|;]/
+	lang = AcceptLanguage::Parser::Phrase.new(new_lang[0]+';'+new_lang[-1])
+	if lang
+		primary = lang.primary || 'null'
+		sub = lang.sub || 'null'
+		quality_value = lang.quality_value || 'null'
+	else
+		primary = sub = quality_value = 'null'
+	end
+
+	user_agent = UserAgent.parse ua
+	if user_agent
+		mobile = user_agent.mobile? || false
+		platform = user_agent.platform || 'null'
+		browser = user_agent.browser || 'null'
+		version = user_agent.version || 'null'
+	else
+		mobile = false
+		platform = browser = version = 'null'
+	end
+
+	log_item = [time]
+	log_item << get_machine_id(tokenid, machineid)
+	log_item << get_user_id(userid)
+	log_item << get_language_id(primary, sub, quality_value)
+	log_item << get_browser_id(mobile, platform, browser, version)
+	log_item << get_location_id(continent, country, cityname, timezone)
+	log_item << get_referer_id(referer)
+	log_item << get_host_id(host)
+	log_item << get_requesturi_id(url)
+
+	import_database log_item
+
+	true
+end
+
+unless push_log(sample_json)
+	puts 'input parmameter error!'
+end
+
+
+exit 0
 
 =begin 
 =================================================================

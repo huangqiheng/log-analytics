@@ -5,7 +5,7 @@ server:
 database:
   adapter: mysql2
   host: localhost
-  database: log-server
+  database: log_server
   encoding: utf8
-  username: log-admin
-  password: log-admin-pass
+  username: log_admin
+  password: log_admin_pass
