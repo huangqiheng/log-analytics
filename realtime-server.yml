@@ -1,0 +1,19 @@
+server:
+  host: 0.0.0.0
+  port: 2101
+
+log_database:
+  adapter: mysql2
+  host: localhost
+  database: log_server
+  encoding: utf8
+  username: readlog
+  password: readlogpass
+
+realtime_database:
+  adapter: mysql2
+  host: localhost
+  database: realtime_server
+  encoding: utf8
+  username: realtime_admin
+  password: realtime_admin_pass

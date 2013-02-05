@@ -7,6 +7,7 @@ require 'em-zeromq'
 
 require 'active_record'
 require 'logger'
+require 'digest/md5'
 
 require 'uri'
 require 'multi_json'
@@ -45,7 +46,7 @@ end.parse!
 =================================================================
 =end
 
-config = YAML.load_file 'config.yml'
+config = YAML.load_file 'log-server.yml'
 server_conf = config['server']
 host = server_conf['host']
 port = server_conf['port']
@@ -88,65 +89,77 @@ def create_tables
 	ActiveRecord::Schema.define do
 		create_table :fact_requests do |t|
 			t.datetime 	:time,	    	:null=>false
-			t.integer	:dim_referer_id
-			t.integer 	:dim_location_id
-			t.integer 	:dim_language_id
-			t.integer 	:dim_browser_id
 			t.integer 	:dim_machine_id
 			t.integer 	:dim_user_id
+			t.integer 	:dim_language_id
+			t.integer 	:dim_location_id
+			t.integer 	:dim_browser_id
+			t.integer	:dim_referer_id
 			t.integer 	:dim_host_id
 			t.integer 	:dim_requesturi_id
 		end
-		add_index :fact_requests, [:time], :unique
+		add_index :fact_requests, [:time], :unique=>true
 
-		create_table :dim_referers do |t|
-			t.string	:host,		:null=>false
-			t.integer	:uri_counter,	:default=>0
-		end
-
+		#-------------------------------------------------------
 		create_table :dim_locations do |t|
-			t.string	:ip,		:null=>false
 			t.string	:continent,	:null=>false
 			t.string	:country,	:null=>false
 			t.string	:city,		:null=>false
-			t.integer	:uri_counter,	:default=>0
+			t.string	:timezone, 	:null=>false
+			t.string	:md5,		:null=>false
 		end
+		add_index :dim_locations, [:id, :md5], :unique=>true
 
+		#-------------------------------------------------------
 		create_table :dim_languages do |t|
 			t.string	:primary,	:null=>false
 			t.string	:sub,		:null=>false
 			t.string	:quality_value,	:null=>false
-			t.integer	:uri_counter,	:default=>0
+			t.string	:md5,		:null=>false
 		end
+		add_index :dim_languages, [:id, :md5], :unique=>true
 
+		#-------------------------------------------------------
 		create_table :dim_browsers do |t|
-			t.integer	:mobile,	:default=>0
+			t.boolean 	:mobile,	:default=>false
 			t.string	:platform,	:null=>false
 			t.string	:browser,	:null=>false
 			t.string	:version,	:null=>false
-			t.integer	:uri_counter,	:default=>0
+			t.string	:md5,		:null=>false
 		end
+		add_index :dim_browsers, [:id, :md5], :unique=>true
 
+		#-------------------------------------------------------
 		create_table :dim_machines do |t|
 			t.string	:token_key,	:null=>false
 			t.string	:hardware_key,	:null=>false
-			t.integer	:uri_counter,	:default=>0
+			t.string	:md5,		:null=>false
 		end
+		add_index :dim_machines, [:id, :md5], :unique=>true
 
+		#-------------------------------------------------------
 		create_table :dim_users do |t|
 			t.string	:user,		:null=>false
-			t.integer	:uri_counter,	:default=>0
 		end
+		add_index :dim_users, [:id, :user], :unique=>true
 
+		#-------------------------------------------------------
+		create_table :dim_referers do |t|
+			t.string	:host,		:null=>false
+		end
+		add_index :dim_referers, [:id, :host], :unique=>true
+
+		#-------------------------------------------------------
 		create_table :dim_hosts do |t|
 			t.string	:host,		:null=>false
-			t.integer	:uri_counter,	:default=>0
 		end
+		add_index :dim_hosts, [:id, :host], :unique=>true
 
+		#-------------------------------------------------------
 		create_table :dim_requesturis do |t|
 			t.string	:request_uri,	:null=>false
-			t.integer	:uri_counter,	:default=>0
 		end
+		add_index :dim_requesturis, [:id, :request_uri], :unique=>true
 	end
 end
 
@@ -165,46 +178,125 @@ def drop_tables
 end
 
 drop_tables()
-
 create_tables()
 
 
 sample_json = '{"User-Id" : "hiand","Host" : "hi.baidu.com","Request URL" : "http://hi.baidu.com/chenshake/item/59c044fe49c3c6ef1b111ff8","Referer" : "https://www.google.com.hk/","User-Agent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_8_2) AppleWebKit/537.17 (KHTML, like Gecko) Chrome/24.0.1312.52 Safari/537.17","Accept-Language" : "zh-CN,zh;q=0.8","Client-Ip" : "22.224.12.67"}'
 
-def get_referer_id host
+MD5_PREFIX = 'log-server-md5-prefix'
 
+def get_md5_str *items
+	digest = Digest::MD5.new
+	digest << MD5_PREFIX
+	items.each do |o|
+		digest << '-'
+		digest << o
+	end
+	digest.hexdigest
+end
+
+def get_referer_id referer_url
+        uri = URI.parse referer_url
+	dim = DimReferer.find_by_host uri.host, :select=>'id'
+	return dim.id if dim
+
+	new_dim = DimReferer.create! :host=>uri.host
+	new_dim.id
 end
 
 def get_location_id continent, country, city, timezone
+	md5_str = get_md5_str continent, country, city, timezone
+	dim = DimLocation.find_by_md5 md5_str, :select=>'id'
+	return dim.id if dim
 
+	new_dim = DimLocation.new do |o|
+		o.continent = continent
+		o.country = country
+		o.city = city
+		o.timezone = timezone
+		o.md5 = md5_str
+		o.save!
+	end
+	new_dim.id
 end
 
 def get_language_id primary, sub, quality_value
+	md5_str = get_md5_str primary, sub, quality_value.to_s
+	dim = DimLanguage.find_by_md5 md5_str, :select=>'id'
+	return dim.id if dim
 
+	new_dim = DimLanguage.new do |o|
+		o.primary = primary
+		o.sub = sub
+		o.quality_value = quality_value
+		o.md5 = md5_str
+		o.save!
+	end
+	new_dim.id
 end
 
 def get_browser_id mobile, platform, browser, version
+	md5_str = get_md5_str mobile.to_s, platform, browser, version
+	dim = DimBrowser.find_by_md5 md5_str, :select=>'id'
+	return dim.id if dim
 
+	new_dim = DimBrowser.new do |o|
+		o.mobile = mobile
+		o.platform = platform
+		o.browser = browser
+		o.version = version
+		o.md5 = md5_str
+		o.save!
+	end
+	new_dim.id
 end
 
 def get_machine_id token, hardware
+	md5_str = get_md5_str token, hardware
+	dim = DimMachine.find_by_md5 md5_str, :select=>'id'
+	return dim.id if dim
 
+	new_dim = DimMachine.create! :token_key=>token, :hardware_key=>hardware, :md5=>md5_str
+	new_dim.id
 end
 
 def get_user_id user
+	dim = DimUser.find_by_user user, :select=>'id'
+	return dim.id if dim
 
+	new_dim = DimUser.create! :user=>user
+	new_dim.id
 end
 
 def get_host_id host
+	dim = DimHost.find_by_host host, :select=>'id'
+	return dim.id if dim
 
+	new_dim = DimHost.create! :host=>host
+	new_dim.id
 end
 
 def get_requesturi_id uri
+	dim = DimRequesturi.find_by_request_uri uri, :select=>'id'
+	return dim.id if dim
 
+	new_dim = DimRequesturi.create! :request_uri=>uri
+	new_dim.id
 end
 
 def import_database log_item
-	puts log_item
+	FactRequest.new do |o|
+		o.time = log_item.shift
+		o.dim_machine_id = log_item.shift
+		o.dim_user_id = log_item.shift
+		o.dim_location_id = log_item.shift
+		o.dim_language_id = log_item.shift
+		o.dim_browser_id = log_item.shift
+		o.dim_referer_id = log_item.shift
+		o.dim_host_id = log_item.shift
+		o.dim_requesturi_id = log_item.shift
+		o.save!
+	end
 end
 
 def push_log item_json
@@ -256,9 +348,9 @@ def push_log item_json
 	log_item = [time]
 	log_item << get_machine_id(tokenid, machineid)
 	log_item << get_user_id(userid)
+	log_item << get_location_id(continent, country, cityname, timezone)
 	log_item << get_language_id(primary, sub, quality_value)
 	log_item << get_browser_id(mobile, platform, browser, version)
-	log_item << get_location_id(continent, country, cityname, timezone)
 	log_item << get_referer_id(referer)
 	log_item << get_host_id(host)
 	log_item << get_requesturi_id(url)
@@ -268,9 +360,13 @@ def push_log item_json
 	true
 end
 
-unless push_log(sample_json)
-	puts 'input parmameter error!'
-end
+push_log(sample_json)
+sleep 1
+push_log(sample_json)
+sleep 1
+push_log(sample_json)
+sleep 1
+push_log(sample_json)
 
 
 exit 0

@@ -1,0 +1,180 @@
+#!/usr/bin/env ruby
+#encoding: utf-8
+
+require 'optparse'
+require 'yaml'
+require 'em-zeromq'
+
+require 'active_record'
+require 'logger'
+require 'digest/md5'
+
+require 'uri'
+require 'multi_json'
+require 'accept_language'
+require 'useragent'
+require 'geoip'
+
+=begin 
+=================================================================
+	获取命令行参数
+=================================================================
+=end
+
+options = {}
+
+banner_str = <<end_of_banner
+------------------ 程序说明 -------------------
+
+------------------ 命令行说明 ---------------------
+end_of_banner
+
+option_parser = OptionParser.new do |opts|
+	opts.banner = banner_str	
+=begin
+	opts.on('-t TIME', '--time Time', Integer, title) do |value|
+		options[:time] = value
+	end
+=end
+end.parse!
+
+
+=begin 
+=================================================================
+	读取配置文件
+=================================================================
+=end
+
+config = YAML.load_file 'realtime-server.yml'
+server_conf = config['server']
+host = server_conf['host']
+port = server_conf['port']
+
+=begin
+================================================================
+	建立数据库连接
+=================================================================
+=end
+
+class LogServer	    < ActiveRecord::Base; end
+class RtmServer	    < ActiveRecord::Base; end
+
+logstdout = Logger.new STDERR
+LogServer.establish_connection config['log_database']
+LogServer.logger = logstdout
+class DimLocation   < LogServer; end
+class DimLanguage   < LogServer; end
+class DimBrowser    < LogServer; end
+class DimMachine    < LogServer; end
+class DimUser	    < LogServer; end
+class DimReferer    < LogServer; end
+class DimHost	    < LogServer; end
+class DimRequesturi < LogServer; end
+
+RtmServer.establish_connection config['realtime_database']
+RtmServer.logger = logstdout
+class RankDetail	< RtmServer; end
+
+def create_tables
+	RtmServer::Schema.define do
+		#-------------------------------------------------------
+		create_table :rank_details do |t|
+			t.integer 	:machine_id
+			t.string	:request_uri,	:null=>false
+			t.string	:language,	:null=>false
+			t.boolean	:ismobile
+			t.string	:os,		:null=>false
+			t.string	:browser,	:null=>false
+			t.integer 	:counter
+		end
+	end
+end
+
+def drop_tables
+	RtmServer::Schema.define do
+		drop_table :rank_details	if RankLocation.table_exists?
+	end
+end
+#drop_tables()
+
+unless RankDetail.table_exists?
+	create_tables()
+end
+
+MD5_PREFIX = 'log-server-md5-prefix'
+
+def get_md5_str *items
+	digest = Digest::MD5.new
+	digest << MD5_PREFIX
+	items.each do |o|
+		digest << '-'
+		digest << o
+	end
+	digest.hexdigest
+end
+
+def get_language language_id
+	dim = DimLanguage.find language_id :select=>'primary sub'
+	return "#{dim.primary}-#{dim.sub}" if dim
+	'(not set)'
+end
+
+def get_browser browser_id
+	dim = DimBrowser.find browser_id, :select=>'mobile platform browser'
+	return dim.mobile,dim.platform,dim.browser if dim
+	false, '(not set)', '(not set)'
+end
+
+def get_machine_id token, hardware
+	md5_str = get_md5_str token, hardware
+	dim = DimMachine.find_by_md5 md5_str, :select=>'id'
+	return dim.id if dim
+
+	new_dim = DimMachine.create! :token_key=>token, :hardware_key=>hardware, :md5=>md5_str
+	new_dim.id
+end
+
+def get_requesturi uri_id
+	dim = DimRequesturi.find uri_id, :select=>'request_uri'
+	return dim.request_uri if dim
+	'null'
+end
+
+
+=begin 
+=================================================================
+	监听zeromq
+=================================================================
+=end
+
+Thread.abort_on_exception = true
+
+trap('INT') do
+  EM::stop()
+end
+
+puts "Started realtime server (with zmq #{ZMQ::Util.version.join('.')})."
+
+zmq = EM::ZeroMQ::Context.new(1)
+
+EM.run do
+	# setup pull sockets
+	pull_srv = zmq.socket(ZMQ::PULL)
+
+	pull_srv.hwm = 10000
+	pull_srv.swap = 1024 * 4 * 256
+
+	# push_socket1.hwm = 40
+	puts "HWM: #{pull_srv.hwm}"
+	puts "SWAP: #{pull_srv.swap}"
+
+	pull_srv.bind("tcp://#{host}:#{port}")
+
+	pull_srv.on(:message) { |msg|
+		puts msg.copy_out_string
+		msg.close
+	}
+end
+
+puts "Completed."
+
