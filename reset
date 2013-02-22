@@ -1,0 +1,30 @@
+#!/usr/bin/env ruby
+#encoding: utf-8
+
+require 'yaml'
+require 'mysql2'
+
+
+log_config = YAML.load_file 'log-server.yml'
+log_config = Hash[log_config['database'].map{|(k,v)| [k.to_sym,v]}]
+ 
+client = Mysql2::Client.new log_config
+client.query 'drop table if exists fact_requests'
+client.query 'drop table if exists dim_referers'
+client.query 'drop table if exists dim_locations'
+client.query 'drop table if exists dim_languages'
+client.query 'drop table if exists dim_browsers'
+client.query 'drop table if exists dim_machines'
+client.query 'drop table if exists dim_users'
+client.query 'drop table if exists dim_hosts'
+client.query 'drop table if exists dim_requesturis'
+
+
+rtm_config = YAML.load_file 'realtime-server.yml'
+rtm_config = Hash[rtm_config['realtime_database'].map{|(k,v)| [k.to_sym,v]}]
+client2 = Mysql2::Client.new rtm_config
+client2.query 'drop table if exists rank_urls'
+client2.query 'drop table if exists rank_languages'
+client2.query 'drop table if exists rank_useragents'
+
+puts 'reset ok!'

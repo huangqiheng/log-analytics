@@ -1,0 +1,26 @@
+#!/usr/bin/env ruby
+#encoding: utf-8
+
+require 'yaml'
+require 'em-zeromq'
+
+config = YAML.load_file 'log-server.yml'
+server_conf = config['server']
+host = server_conf['host']
+port = server_conf['port']
+
+zmq = EM::ZeroMQ::Context.new(1)
+
+
+$sample_json = '{"User-Id" : "hiand","Host" : "hi.baidu.com","Request URL" : "http://hi.baidu.com/chenshake/item/59c044fe49c3c6ef1b111ff8","Referer" : "https://www.google.com.hk/","User-Agent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_8_2) AppleWebKit/537.17 (KHTML, like Gecko) Chrome/24.0.1312.52 Safari/537.17","Accept-Language" : "zh-CN,zh;q=0.8","Client-Ip" : "22.224.12.67"}'
+
+
+EM.run do
+	push = zmq.socket(ZMQ::PUSH)
+	push.connect("tcp://#{host}:#{port}")
+
+	EM.add_periodic_timer(1) {
+		push.send_msg($sample_json)
+		puts 'client puts'
+	}
+end

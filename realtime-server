@@ -11,9 +11,6 @@ require 'digest/md5'
 
 require 'uri'
 require 'multi_json'
-require 'accept_language'
-require 'useragent'
-require 'geoip'
 
 =begin 
 =================================================================
@@ -45,8 +42,8 @@ end.parse!
 =================================================================
 =end
 
-config = YAML.load_file 'realtime-server.yml'
-server_conf = config['server']
+$config = YAML.load_file 'realtime-server.yml'
+server_conf = $config['server']
 host = server_conf['host']
 port = server_conf['port']
 
@@ -56,12 +53,49 @@ port = server_conf['port']
 =================================================================
 =end
 
-class LogServer	    < ActiveRecord::Base; end
-class RtmServer	    < ActiveRecord::Base; end
-
 logstdout = Logger.new STDERR
-LogServer.establish_connection config['log_database']
-LogServer.logger = logstdout
+
+class RankUrl		< ActiveRecord::Base; end
+class RankLanguage	< ActiveRecord::Base; end
+class RankUseragent	< ActiveRecord::Base; end
+ActiveRecord::Base.establish_connection $config['realtime_database']
+ActiveRecord::Base.logger = logstdout
+
+unless RankUrl.table_exists?
+	ActiveRecord::Schema.define do
+		#-------------------------------------------------------
+		create_table :rank_urls do |t|
+			t.integer 	:machine_id
+			t.datetime 	:time,	    	:null=>false
+			t.integer	:requesturi_id,	:null=>false
+			t.integer 	:counter,	:default=>0
+		end
+
+		#-------------------------------------------------------
+		create_table :rank_languages do |t|
+			t.integer 	:machine_id
+			t.datetime 	:time,	    	:null=>false
+			t.string	:language,	:null=>false
+			t.integer 	:counter,	:default=>0
+		end
+
+		#-------------------------------------------------------
+		create_table :rank_useragents do |t|
+			t.integer 	:machine_id
+			t.datetime 	:time,	    	:null=>false
+			t.boolean	:mobile,  	:default=>false
+			t.string	:platform,	:null=>false
+			t.string	:browser,	:null=>false
+			t.integer 	:counter,	:default=>0
+		end
+	end
+end
+
+
+class LogServer	    < ActiveRecord::Base 
+	self.abstract_class = true
+	establish_connection $config['log_database']
+end
 class DimLocation   < LogServer; end
 class DimLanguage   < LogServer; end
 class DimBrowser    < LogServer; end
@@ -71,35 +105,6 @@ class DimReferer    < LogServer; end
 class DimHost	    < LogServer; end
 class DimRequesturi < LogServer; end
 
-RtmServer.establish_connection config['realtime_database']
-RtmServer.logger = logstdout
-class RankDetail	< RtmServer; end
-
-def create_tables
-	RtmServer::Schema.define do
-		#-------------------------------------------------------
-		create_table :rank_details do |t|
-			t.integer 	:machine_id
-			t.string	:request_uri,	:null=>false
-			t.string	:language,	:null=>false
-			t.boolean	:ismobile
-			t.string	:os,		:null=>false
-			t.string	:browser,	:null=>false
-			t.integer 	:counter
-		end
-	end
-end
-
-def drop_tables
-	RtmServer::Schema.define do
-		drop_table :rank_details	if RankLocation.table_exists?
-	end
-end
-#drop_tables()
-
-unless RankDetail.table_exists?
-	create_tables()
-end
 
 MD5_PREFIX = 'log-server-md5-prefix'
 
@@ -114,15 +119,15 @@ def get_md5_str *items
 end
 
 def get_language language_id
-	dim = DimLanguage.find language_id :select=>'primary sub'
-	return "#{dim.primary}-#{dim.sub}" if dim
+	dim = DimLanguage.find language_id, :select=>'pri,sub'
+	return "#{dim.pri}-#{dim.sub}" if dim
 	'(not set)'
 end
 
 def get_browser browser_id
-	dim = DimBrowser.find browser_id, :select=>'mobile platform browser'
-	return dim.mobile,dim.platform,dim.browser if dim
-	false, '(not set)', '(not set)'
+	dim = DimBrowser.find browser_id, :select=>'mobile,platform,browser'
+	return [dim.mobile,dim.platform,dim.browser] if dim
+	[false, '(not set)', '(not set)']
 end
 
 def get_machine_id token, hardware
@@ -140,6 +145,65 @@ def get_requesturi uri_id
 	'null'
 end
 
+def get_fixed_time time
+	time = Time.at(time)
+	Time.utc(time.year, time.month, time.day, time.hour, 0, 0, 0)
+end
+
+def incomming_realtime_message msg
+	msg_obj = MultiJson.load msg
+	time,machine,user,location,language,ua,referer,host,url = msg_obj
+	time = get_fixed_time time
+	new_counter = 0
+
+	conditions = ["machine_id=? and time=? and requesturi_id=?", machine,time,url]
+	result = RankUrl.update_all("counter=counter+1", conditions, :limit=>1)
+
+	if (result == 0)
+		RankUrl.new do |o|
+			o.machine_id = machine
+			o.time = time
+			o.requesturi_id = url
+			o.counter = 1
+			o.save!
+		end
+		new_counter += 1
+	end
+
+	language = get_language language
+	conditions = ["machine_id=? and time=? and language=?", machine,time,language]
+	result = RankLanguage.update_all("counter=counter+1", conditions, :limit=>1)
+
+	if (result == 0)
+		RankLanguage.new do |o|
+			o.machine_id = machine
+			o.time = time
+			o.language = language
+			o.counter = 1
+			o.save!
+		end
+		new_counter += 1
+	end
+
+	mobile,platform,browser = get_browser ua
+	conditions = ["machine_id=? and time=? and platform=? and browser=?", machine,time,platform,browser]
+	result = RankUseragent.update_all("counter=counter+1", conditions, :limit=>1)
+
+	if (result == 0)
+		RankUseragent.new do |o|
+			o.machine_id = machine
+			o.time = time
+			o.mobile = mobile
+			o.platform = platform
+			o.browser = browser
+			o.counter = 1
+			o.save!
+		end
+		new_counter += 1
+	end
+
+	new_counter
+end
 
 =begin 
 =================================================================
@@ -165,13 +229,13 @@ EM.run do
 	pull_srv.swap = 1024 * 4 * 256
 
 	# push_socket1.hwm = 40
-	puts "HWM: #{pull_srv.hwm}"
-	puts "SWAP: #{pull_srv.swap}"
+	#puts "HWM: #{pull_srv.hwm}"
+	#puts "SWAP: #{pull_srv.swap}"
 
 	pull_srv.bind("tcp://#{host}:#{port}")
 
 	pull_srv.on(:message) { |msg|
-		puts msg.copy_out_string
+		incomming_realtime_message msg.copy_out_string
 		msg.close
 	}
 end

@@ -51,14 +51,20 @@ server_conf = config['server']
 host = server_conf['host']
 port = server_conf['port']
 
+rt_server_conf = config['realtime_server']
+rt_host = rt_server_conf['host']
+rt_port = rt_server_conf['port']
+
+
 =begin
 ================================================================
 	建立数据库连接
 =================================================================
 =end
 
+$log = Logger.new STDERR
 ActiveRecord::Base.establish_connection config['database']
-ActiveRecord::Base.logger = Logger.new STDERR
+#ActiveRecord::Base.logger = $log
 
 class DimReferer    < ActiveRecord::Base; has_many :fact_requests end
 class DimLocation   < ActiveRecord::Base; has_many :fact_requests end
@@ -112,7 +118,7 @@ def create_tables
 
 		#-------------------------------------------------------
 		create_table :dim_languages do |t|
-			t.string	:primary,	:null=>false
+			t.string	:pri,		:null=>false
 			t.string	:sub,		:null=>false
 			t.string	:quality_value,	:null=>false
 			t.string	:md5,		:null=>false
@@ -145,9 +151,9 @@ def create_tables
 
 		#-------------------------------------------------------
 		create_table :dim_referers do |t|
-			t.string	:host,		:null=>false
+			t.string	:url,		:null=>false
 		end
-		add_index :dim_referers, [:id, :host], :unique=>true
+		add_index :dim_referers, [:id, :url], :unique=>true
 
 		#-------------------------------------------------------
 		create_table :dim_hosts do |t|
@@ -163,25 +169,10 @@ def create_tables
 	end
 end
 
-def drop_tables
-	ActiveRecord::Schema.define do
-		drop_table :fact_requests 	if FactRequest.table_exists?
-		drop_table :dim_referers  	if DimReferer.table_exists?
-		drop_table :dim_locations 	if DimLocation.table_exists?
-		drop_table :dim_languages 	if DimLanguage.table_exists?
-		drop_table :dim_browsers  	if DimBrowser.table_exists?
-		drop_table :dim_machines  	if DimMachine.table_exists?
-		drop_table :dim_users 	  	if DimUser.table_exists?
-		drop_table :dim_hosts 	  	if DimHost.table_exists?
-		drop_table :dim_requesturis 	if DimRequesturi.table_exists?
-	end
+unless FactRequest.table_exists?
+	create_tables()
 end
 
-drop_tables()
-create_tables()
-
-
-sample_json = '{"User-Id" : "hiand","Host" : "hi.baidu.com","Request URL" : "http://hi.baidu.com/chenshake/item/59c044fe49c3c6ef1b111ff8","Referer" : "https://www.google.com.hk/","User-Agent" : "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_8_2) AppleWebKit/537.17 (KHTML, like Gecko) Chrome/24.0.1312.52 Safari/537.17","Accept-Language" : "zh-CN,zh;q=0.8","Client-Ip" : "22.224.12.67"}'
 
 MD5_PREFIX = 'log-server-md5-prefix'
 
@@ -196,11 +187,10 @@ def get_md5_str *items
 end
 
 def get_referer_id referer_url
-        uri = URI.parse referer_url
-	dim = DimReferer.find_by_host uri.host, :select=>'id'
+	dim = DimReferer.find_by_url referer_url, :select=>'id'
 	return dim.id if dim
 
-	new_dim = DimReferer.create! :host=>uri.host
+	new_dim = DimReferer.create! :url=>referer_url
 	new_dim.id
 end
 
@@ -220,13 +210,13 @@ def get_location_id continent, country, city, timezone
 	new_dim.id
 end
 
-def get_language_id primary, sub, quality_value
-	md5_str = get_md5_str primary, sub, quality_value.to_s
+def get_language_id pri, sub, quality_value
+	md5_str = get_md5_str pri, sub, quality_value.to_s
 	dim = DimLanguage.find_by_md5 md5_str, :select=>'id'
 	return dim.id if dim
 
 	new_dim = DimLanguage.new do |o|
-		o.primary = primary
+		o.pri = pri
 		o.sub = sub
 		o.quality_value = quality_value
 		o.md5 = md5_str
@@ -286,15 +276,15 @@ end
 
 def import_database log_item
 	FactRequest.new do |o|
-		o.time = log_item.shift
-		o.dim_machine_id = log_item.shift
-		o.dim_user_id = log_item.shift
-		o.dim_location_id = log_item.shift
-		o.dim_language_id = log_item.shift
-		o.dim_browser_id = log_item.shift
-		o.dim_referer_id = log_item.shift
-		o.dim_host_id = log_item.shift
-		o.dim_requesturi_id = log_item.shift
+		o.time = log_item[0]
+		o.dim_machine_id = log_item[1]
+		o.dim_user_id = log_item[2]
+		o.dim_location_id = log_item[3]
+		o.dim_language_id = log_item[4]
+		o.dim_browser_id = log_item[5]
+		o.dim_referer_id = log_item[6]
+		o.dim_host_id = log_item[7]
+		o.dim_requesturi_id = log_item[8]
 		o.save!
 	end
 end
@@ -327,11 +317,11 @@ def push_log item_json
 	new_lang = language.split /[,|;]/
 	lang = AcceptLanguage::Parser::Phrase.new(new_lang[0]+';'+new_lang[-1])
 	if lang
-		primary = lang.primary || 'null'
+		pri = lang.primary || 'null'
 		sub = lang.sub || 'null'
 		quality_value = lang.quality_value || 'null'
 	else
-		primary = sub = quality_value = 'null'
+		pri = sub = quality_value = 'null'
 	end
 
 	user_agent = UserAgent.parse ua
@@ -349,27 +339,23 @@ def push_log item_json
 	log_item << get_machine_id(tokenid, machineid)
 	log_item << get_user_id(userid)
 	log_item << get_location_id(continent, country, cityname, timezone)
-	log_item << get_language_id(primary, sub, quality_value)
+	log_item << get_language_id(pri, sub, quality_value)
 	log_item << get_browser_id(mobile, platform, browser, version)
 	log_item << get_referer_id(referer)
 	log_item << get_host_id(host)
 	log_item << get_requesturi_id(url)
 
 	import_database log_item
+	outport_realtime_server log_item
 
 	true
 end
 
-push_log(sample_json)
-sleep 1
-push_log(sample_json)
-sleep 1
-push_log(sample_json)
-sleep 1
-push_log(sample_json)
-
-
-exit 0
+def outport_realtime_server log_item
+	time = log_item[0]
+	log_item[0] = time.to_i
+	$push_remote.send_msg MultiJson.dump(log_item)
+end
 
 =begin 
 =================================================================
@@ -388,6 +374,9 @@ puts "Started (with zmq #{ZMQ::Util.version.join('.')})."
 zmq = EM::ZeroMQ::Context.new(1)
 
 EM.run do
+	$push_remote  = zmq.socket(ZMQ::PUSH)
+	$push_remote.connect("tcp://#{rt_host}:#{rt_port}")
+
 	# setup pull sockets
 	pull_srv = zmq.socket(ZMQ::PULL)
 
@@ -395,16 +384,19 @@ EM.run do
 	pull_srv.swap = 1024 * 4 * 256
 
 	# push_socket1.hwm = 40
-	puts "HWM: #{pull_srv.hwm}"
-	puts "SWAP: #{pull_srv.swap}"
+	#puts "HWM: #{pull_srv.hwm}"
+	#puts "SWAP: #{pull_srv.swap}"
 
 	pull_srv.bind("tcp://#{host}:#{port}")
 
 	pull_srv.on(:message) { |msg|
-		puts msg.copy_out_string
+		json_msg = msg.copy_out_string.strip
+		if json_msg != ''
+			push_log(json_msg)
+		end
 		msg.close
 	}
 end
 
-puts "Completed."
+puts "Unexpect completed."
 
