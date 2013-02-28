@@ -23,16 +23,6 @@ server_conf = $config['server']
 host = server_conf['host']
 port = server_conf['port']
 
-#配置服务器
-set :bind, host
-set :port, port
-set :root, File.dirname(__FILE__)
-set :app_file, __FILE__
-#set :sessions, true
-#set :public_folder, Proc.new { File.join(root, "static") }
-#set :views, Proc.new { File.join(root, "templates") }
-#set :environment, :production
-
 =begin
 ================================================================
 	建立数据库连接
@@ -86,15 +76,61 @@ def get_requesturi uri_id
 	'null'
 end
 
+def get_line_chart step,count,token,hardware
+	machine_id = get_machine_id token,hardware
+
+	result = {}
+	result['step'] = step
+	result['count'] = count
+	result['token'] = token
+	result['hardware'] = hardware
+	MultiJson.dump result
+end
+
+def get_list_chart type,count,token,hardware
+
+	result = {}
+	result['type'] = type
+	result['count'] = count
+	result['token'] = token
+	result['hardware'] = hardware
+	MultiJson.dump result
+end
+
+def get_pie_chart type,piece,token,hardware
+	result = {}
+	result['type'] = type
+	result['piece'] = piece
+	result['token'] = token
+	result['hardware'] = hardware
+	MultiJson.dump result
+end
 
 =begin 
 =================================================================
-	监听sinatra
+	sinatra
 =================================================================
 =end
 
-get '/' do
-	'hello world!'
+#配置服务器
+set :bind, host
+set :port, port
+set :root, File.dirname(__FILE__)
+set :app_file, __FILE__
+#set :sessions, true
+#set :public_folder, Proc.new { File.join(root, "static") }
+#set :views, Proc.new { File.join(root, "templates") }
+#set :environment, :production
+
+get '/api/line/:step/:count/:token/:hardware' do
+	get_line_chart  params[:step],params[:count],params[:token],params[:hardware]
 end
 
+get '/api/list/:type/:count/:token/:hardware' do
+	get_list_chart params[:type],params[:count],params[:token],params[:hardware]
+end
+
+get '/api/pie/:type/:piece/:token/:hardware' do
+	get_pie_chart params[:type],params[:piece],params[:token],params[:hardware]
+end
 

@@ -59,7 +59,7 @@ class RankUrl		< ActiveRecord::Base; end
 class RankLanguage	< ActiveRecord::Base; end
 class RankUseragent	< ActiveRecord::Base; end
 ActiveRecord::Base.establish_connection $config['realtime_database']
-ActiveRecord::Base.logger = logstdout
+#ActiveRecord::Base.logger = logstdout
 
 unless RankUrl.table_exists?
 	ActiveRecord::Schema.define do
@@ -150,11 +150,17 @@ def get_fixed_time time
 	Time.utc(time.year, time.month, time.day, time.hour, 0, 0, 0)
 end
 
+$handle_counter = 0
+
 def incomming_realtime_message msg
 	msg_obj = MultiJson.load msg
+
 	time,machine,user,location,language,ua,referer,host,url = msg_obj
 	time = get_fixed_time time
 	new_counter = 0
+
+	$handle_counter += 1
+	puts "(#{$handle_counter}) " + get_requesturi(url)
 
 	conditions = ["machine_id=? and time=? and requesturi_id=?", machine,time,url]
 	result = RankUrl.update_all("counter=counter+1", conditions, :limit=>1)

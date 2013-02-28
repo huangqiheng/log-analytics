@@ -104,7 +104,7 @@ def create_tables
 			t.integer 	:dim_host_id
 			t.integer 	:dim_requesturi_id
 		end
-		add_index :fact_requests, [:time], :unique=>true
+		add_index :fact_requests, [:time]
 
 		#-------------------------------------------------------
 		create_table :dim_locations do |t|
@@ -297,13 +297,13 @@ def push_log item_json
 	return false unless ua = item['User-Agent']
 	return false unless language = item['Accept-Language']
 	return false unless ip = item['Client-Ip']
+	return false unless userid = item['User-Id']
+	return false unless tokenid = item['Token-Id']
+	return false unless machineid = item['Machine-Id']
 
 	time = item['Time'] || Time.now.utc.to_s
 	time = Time.parse(time).utc
-	userid = item['User-Id'] || 'null'
-	tokenid = item['Token-Id'] || 'null'
-	machineid = item['Machine-Id'] || 'null'
-
+	
 	city = GeoIP.new('GeoLiteCity.dat').city(ip)
 	if city 
 		continent = city.continent_code || 'null'
@@ -314,14 +314,15 @@ def push_log item_json
 		continent = country = cityname = timezone = 'null'
 	end
 
-	new_lang = language.split /[,|;]/
-	lang = AcceptLanguage::Parser::Phrase.new(new_lang[0]+';'+new_lang[-1])
+	new_lang = language.split ','
+	lang = AcceptLanguage::Parser::Phrase.new(new_lang[0])
 	if lang
-		pri = lang.primary || 'null'
-		sub = lang.sub || 'null'
-		quality_value = lang.quality_value || 'null'
+		pri = lang.primary || 'en'
+		sub = lang.sub || pri || 'en'
+		quality_value = lang.quality_value || '1'
 	else
-		pri = sub = quality_value = 'null'
+		pri = sub = 'en'
+		quality_value = '1'
 	end
 
 	user_agent = UserAgent.parse ua
@@ -392,7 +393,9 @@ EM.run do
 	pull_srv.on(:message) { |msg|
 		json_msg = msg.copy_out_string.strip
 		if json_msg != ''
-			push_log(json_msg)
+			unless push_log(json_msg)
+				puts 'error input: ' + json_msg
+			end
 		end
 		msg.close
 	}
