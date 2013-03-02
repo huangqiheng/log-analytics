@@ -34,17 +34,17 @@ namespace :stop do
 
 	desc '关闭log服务器'
 	task :log do
-		system "ps aux | awk \'/log-analytics\\\/log-server.rb/{print $2}\' | xargs kill -9"
+		system "ps aux | awk \'\/log-server.rb/{print $2}\' | xargs kill -9"
 	end
 
 	desc '关闭realtime服务器'
 	task :realtime do
-		system "ps aux | awk \'/log-analytics\\\/realtime-server.rb/{print $2}\' | xargs kill -9"
+		system "ps aux | awk \'\/realtime-server.rb/{print $2}\' | xargs kill -9"
 	end
 
 	desc '关闭api服务器'
 	task :api do
-		system "ps aux | awk \'/log-analytics\\\/api-server.rb/{print $2}\' | xargs kill -9"
+		system "ps aux | awk \'\/api-server.rb/{print $2}\' | xargs kill -9"
 	end
 
 	desc '关闭以下服务器：log服务器，realtime服务器，api服务器'
