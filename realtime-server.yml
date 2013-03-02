@@ -9,6 +9,7 @@ log_database:
   encoding: utf8
   username: readlog
   password: readlogpass
+  pool: 120
 
 realtime_database:
   adapter: mysql2
@@ -17,3 +18,4 @@ realtime_database:
   encoding: utf8
   username: realtime_admin
   password: realtime_admin_pass
+  pool: 120

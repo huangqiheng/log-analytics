@@ -1,4 +1,3 @@
-#!/usr/bin/env ruby
 #encoding: utf-8
 
 require 'yaml'
@@ -114,7 +113,7 @@ def get_random_item
 		$host_list = $host_samples.split "\n"
 	end
 
-	step_time = 3600*24*1 #1天
+	step_time = 3600*24*3 #1天
 	min_time = Time.now - step_time
 	use_time = min_time + rand(1..step_time)
 
@@ -128,7 +127,7 @@ def get_random_item
 	result["Accept-Language"] = $lang_list[rand($lang_list.length)]
 	result["Client-Ip"] = "#{rand(200..210)}.#{rand(100..200)}.#{rand(1..254)}.#{rand(1..254)}"
 	result["Token-Id"] = "token-id-001"
-	result["Machine-Id"] = "machine-id-#{rand(1..2)}"
+	result["Machine-Id"] = "machine-id-1"
 
 	MultiJson.dump result
 end

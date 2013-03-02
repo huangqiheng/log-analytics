@@ -2,6 +2,14 @@ server:
   host: 0.0.0.0
   port: 2102
 
+log_database:
+  adapter: mysql2
+  host: localhost
+  database: log_server
+  encoding: utf8
+  username: readlog
+  password: readlogpass
+  pool: 120
 
 realtime_database:
   adapter: mysql2
@@ -10,4 +18,5 @@ realtime_database:
   encoding: utf8
   username: readrank
   password: readlogpass
+  pool: 120
 

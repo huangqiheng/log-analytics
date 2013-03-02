@@ -13,3 +13,4 @@ database:
   encoding: utf8
   username: log_admin
   password: log_admin_pass
+  pool: 120

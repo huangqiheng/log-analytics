@@ -1,4 +1,0 @@
-#!/bin/sh
-
-kill `ps aux | awk '/log-analytics\/log-server/{print $2}'`
-kill `ps aux | awk '/log-analytics\/realtime-server/{print $2}'`
