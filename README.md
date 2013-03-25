@@ -33,6 +33,13 @@ rake db:create
 rake start 	#单机运行3个服务器
 ```
 
+如果提示找不到accept-language，那是安装不成功，可单独安装
+```sh
+gem install specific_install
+gem specific_install -l git://github.com/nateklaiber/accept_language.git
+
+```
+
 ## 测试是否正常运行
 
 ``` sh
